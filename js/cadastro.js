@@ -12,12 +12,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Aguarda a inicialização do Supabase antes de carregar dados
   function verificarSupabaseECarregar() {
-    if (typeof window.dbRef !== 'undefined' && window.dbRef) {
-      console.log('Supabase inicializado, carregando clientes...');
+    if (typeof window.supabase !== 'undefined' && window.supabase) {
+      console.log('Supabase client (window.supabase) inicializado, carregando clientes...');
       carregarClientes();
     } else {
-      console.log('Aguardando inicialização do Supabase...');
-      setTimeout(verificarSupabaseECarregar, 200);
+      console.log('Aguardando inicialização do Supabase client (window.supabase)...');
+      setTimeout(verificarSupabaseECarregar, 200); // Verifica novamente em 200ms
     }
   }
   
@@ -215,114 +215,113 @@ function configurarEventListeners() {
  * Carrega a lista de clientes cadastrados do Supabase
  * e atualiza a tabela na interface
  */
-function carregarClientes() {
-  // Verifica se dbRef está disponível
-  if (typeof window.dbRef === 'undefined' || !window.dbRef) {
-    console.error('dbRef não está disponível ainda. Aguardando...');
+async function carregarClientes() {
+  // Verifica se supabase está disponível
+  if (typeof window.supabase === 'undefined' || !window.supabase) {
+    console.error('Supabase não está disponível ainda. Aguardando...');
+    // Opcional: tentar novamente após um tempo ou mostrar notificação persistente
+    // setTimeout(carregarClientes, 500);
     return;
   }
 
-  // Referência à tabela de clientes
   const tabelaClientes = document.getElementById("tabelaClientes");
   const nenhumCliente = document.getElementById("nenhumCliente");
+  const filtroClienteSelect = document.getElementById("filtroCliente");
 
-  // Limpa a tabela
+  // Limpa a tabela e o select de filtro
   tabelaClientes.innerHTML = "";
+  filtroClienteSelect.innerHTML = '<option value="">Todos os clientes</option>'; // Mantém a opção padrão
 
-  // Busca os clientes no Supabase
-  window.dbRef.clientes
-    .once("value")
-    .then((snapshot) => {
-      const clientes = snapshot.val();
+  try {
+    const { data: clientes, error } = await window.supabase
+      .from('clientes')
+      .select('*')
+      .order('dataCriacao', { ascending: false });
 
-      // Verifica se existem clientes cadastrados
-      if (objetoVazio(clientes)) {
-        nenhumCliente.classList.remove("d-none");
-        return;
+    if (error) {
+      console.error("Erro ao carregar clientes:", error);
+      mostrarNotificacao("Erro ao carregar clientes: " + error.message, "danger");
+      nenhumCliente.classList.remove("d-none");
+      return;
+    }
+
+    if (!clientes || clientes.length === 0) {
+      nenhumCliente.classList.remove("d-none");
+      return;
+    }
+
+    nenhumCliente.classList.add("d-none");
+
+    clientes.forEach(cliente => {
+      // Adiciona ao filtro
+      const option = document.createElement("option");
+      option.value = cliente.id; // Supabase usa 'id' por padrão
+      option.textContent = cliente.nome;
+      filtroClienteSelect.appendChild(option);
+
+      // Cria a linha da tabela
+      const tr = document.createElement("tr");
+      tr.dataset.id = cliente.id;
+
+      // Define a classe de acordo com o status
+      if (cliente.StatusCadastro === "Em andamento") {
+        tr.classList.add("table-warning");
+      } else if (cliente.StatusCadastro === "Concluído") {
+        tr.classList.add("table-success");
       }
 
-      nenhumCliente.classList.add("d-none");
+      // Formata a data de criação
+      const dataCriacao = cliente.dataCriacao ? formatarData(cliente.dataCriacao) : 'N/A';
 
-      // Preenche o select de filtro de clientes
-      const filtroCliente = document.getElementById("filtroCliente");
-      filtroCliente.innerHTML = '<option value="">Todos os clientes</option>';
-
-      // Adiciona cada cliente à tabela
-      Object.keys(clientes).forEach((id) => {
-        const cliente = clientes[id];
-
-        // Adiciona ao filtro
-        const option = document.createElement("option");
-        option.value = id;
-        option.textContent = cliente.nome;
-        filtroCliente.appendChild(option);
-
-        // Cria a linha da tabela
-        const tr = document.createElement("tr");
-        tr.dataset.id = id;
-
-        // Define a classe de acordo com o status
-        if (cliente.StatusCadastro === "Em andamento") {
-          tr.classList.add("table-warning");
-        } else if (cliente.StatusCadastro === "Concluído") {
-          tr.classList.add("table-success");
-        }
-
-        // Formata a data de criação
-        const dataCriacao = formatarData(cliente.dataCriacao);
-
-        // Conteúdo da linha
-        tr.innerHTML = `
-                    <td>${cliente.nome}</td>
-                    <td>${dataCriacao}</td>
-                    <td>
-                        <span class="badge ${getBadgeClass(
-                          cliente.StatusCadastro
-                        )}">${cliente.StatusCadastro || "Não iniciado"}</span>
-                    </td>
-                    <td>
-                        <button class="btn btn-sm btn-info me-1 btn-visualizar" onclick="visualizarCliente('${id}')">
-                            <i class="fas fa-eye"></i>
-                        </button>
-                        <button class="btn btn-sm btn-primary" onclick="editarCliente('${id}')">
-                            <i class="fas fa-edit"></i>
-                        </button>
-                    </td>
-                `;
-
-        tabelaClientes.appendChild(tr);
-      });
-
-      // Adiciona os event listeners aos botões de visualização
-      const botoesVisualizar = document.querySelectorAll(".btn-visualizar");
-      console.log(
-        "Botões de visualização encontrados:",
-        botoesVisualizar.length
-      );
-
-      botoesVisualizar.forEach(function (botao) {
-        botao.addEventListener("click", function (e) {
-          console.log("Botão de visualização clicado");
-          const clienteId = this.closest("tr").dataset.id;
-          console.log("ID do cliente:", clienteId);
-
-          try {
-            console.log("Tentando chamar visualizarCliente...");
-            visualizarCliente(clienteId);
-          } catch (error) {
-            console.error("Erro ao chamar visualizarCliente:", error);
-            alert("Erro ao visualizar cliente: " + error.message);
-          }
-        });
-      });
-    })
-    .catch((error) => {
-      console.error("Erro ao carregar clientes:", error);
-      mostrarNotificacao(
-        "Erro ao carregar clientes. Tente novamente.",
-        "danger"
-      );
+      // Conteúdo da linha
+      tr.innerHTML = `
+                  <td>${cliente.nome || 'Nome não disponível'}</td>
+                  <td>${dataCriacao}</td>
+                  <td>
+                      <span class="badge ${getBadgeClass(
+                        cliente.StatusCadastro
+                      )}">${cliente.StatusCadastro || "Não iniciado"}</span>
+                  </td>
+                  <td>
+                      <button class="btn btn-sm btn-info me-1 btn-visualizar" data-cliente-id="${cliente.id}">
+                          <i class="fas fa-eye"></i>
+                      </button>
+                      <button class="btn btn-sm btn-primary btn-editar" data-cliente-id="${cliente.id}">
+                          <i class="fas fa-edit"></i>
+                      </button>
+                  </td>
+              `;
+      tabelaClientes.appendChild(tr);
     });
+
+    // Adiciona event listeners DEPOIS que todos os botões foram adicionados ao DOM
+    document.querySelectorAll(".btn-visualizar").forEach(button => {
+      button.addEventListener("click", function() {
+        const clienteId = this.dataset.clienteId;
+        if (typeof visualizarCliente === 'function') {
+            visualizarCliente(clienteId);
+        } else {
+            console.error('Função visualizarCliente não definida globalmente ou não acessível.');
+        }
+      });
+    });
+
+    document.querySelectorAll(".btn-editar").forEach(button => {
+      button.addEventListener("click", function() {
+        const clienteId = this.dataset.clienteId;
+         if (typeof editarCliente === 'function') {
+            editarCliente(clienteId);
+        } else {
+            console.error('Função editarCliente não definida globalmente ou não acessível.');
+        }
+      });
+    });
+
+  } catch (error) {
+    console.error("Erro ao carregar clientes (catch geral):", error);
+    mostrarNotificacao("Erro ao carregar clientes. Tente novamente.", "danger");
+    nenhumCliente.classList.remove("d-none");
+  }
 }
 
 /**
@@ -345,182 +344,152 @@ function getBadgeClass(status) {
  * Abre o modal de edição de cliente com os dados carregados
  * * @param {string} clienteId - ID do cliente a ser editado
  */
-function editarCliente(clienteId) {
-  console.log("=== INÍCIO DA FUNÇÃO EDITAR CLIENTE ===");
+async function editarCliente(clienteId) {
+  console.log("=== INÍCIO DA FUNÇÃO EDITAR CLIENTE (SUPABASE) ===");
   console.log("Editando cliente com ID:", clienteId);
 
-  if (!dbRef) {
-    console.error("ERRO CRÍTICO: dbRef não está definido!");
-    mostrarNotificacao(
-      "Erro de conexão com o banco de dados. Recarregue a página.",
-      "danger"
-    );
+  if (!window.supabase) {
+    console.error("ERRO CRÍTICO: Supabase client (window.supabase) não está definido!");
+    mostrarNotificacao("Erro de conexão com o banco de dados. Recarregue a página.", "danger");
     return;
   }
 
-  // Limpa o formulário antes de carregar os dados
-  document.getElementById("formCadastro").reset();
+  const formCadastro = document.getElementById("formCadastro");
+  if (formCadastro) formCadastro.reset();
 
-  // Oculta todas as áreas de projeto
   document.querySelectorAll(".area-projeto").forEach((area) => {
     area.classList.add("d-none");
   });
 
-  // Armazena o ID do cliente no modal para uso na função de salvar
+  // Limpar previews de arquivos existentes (se houver)
+  document.querySelectorAll('.file-preview-text').forEach(preview => preview.textContent = '');
+
+
   document.getElementById("modalCadastro").dataset.clienteId = clienteId;
-
-  // Atualiza o título do modal
   document.getElementById("modalCadastroLabel").textContent = "Editar Cadastro";
-
-  // Atualiza o texto do botão
   document.getElementById("btnSalvarCadastro").textContent = "Atualizar";
 
-  // Busca os dados do cliente no Supabase
-  dbRef.clientes
-    .child(clienteId)
-    .once("value")
-    .then((snapshotCliente) => {
-      console.log("Resposta recebida do Supabase para dados do cliente");
+  try {
+    // 1. Buscar dados do cliente
+    const { data: cliente, error: clienteError } = await window.supabase
+      .from('clientes')
+      .select('*')
+      .eq('id', clienteId)
+      .single();
 
-      const cliente = snapshotCliente.val();
-      console.log("Dados do cliente:", cliente);
+    if (clienteError) {
+      console.error("Erro ao buscar cliente:", clienteError);
+      throw new Error(`Cliente não encontrado: ${clienteError.message}`);
+    }
 
-      if (!cliente) {
-        console.error("Cliente não encontrado no Supabase");
-        throw new Error("Cliente não encontrado");
-      }
+    if (!cliente) {
+      console.error("Cliente não encontrado no Supabase com ID:", clienteId);
+      mostrarNotificacao("Cliente não encontrado.", "warning");
+      return;
+    }
 
-      // Preenche os campos do formulário com os dados do cliente
-      document.getElementById("cliente").value = cliente.nome || "";
+    console.log("Dados do cliente:", cliente);
 
-      // Formata a data de prazo de entrega
-      if (cliente.prazoEntrega) {
-        const data = new Date(cliente.prazoEntrega);
-        const dia = String(data.getDate()).padStart(2, "0");
-        const mes = String(data.getMonth() + 1).padStart(2, "0");
-        const ano = data.getFullYear();
-        document.getElementById(
-          "dataPrazoEntrega"
-        ).value = `${dia}/${mes}/${ano}`;
-      }
+    // Preenche os campos do formulário com os dados do cliente
+    document.getElementById("cliente").value = cliente.nome || "";
+    if (cliente.prazoEntrega) {
+      document.getElementById("dataPrazoEntrega").value = formatarDataParaInput(cliente.prazoEntrega);
+    }
+     if (cliente.projetoOutrosNome) {
+        const nomeProjetoOutrosInput = document.getElementById("nomeProjetoOutros");
+        if (nomeProjetoOutrosInput) nomeProjetoOutrosInput.value = cliente.projetoOutrosNome;
+    }
 
-      // Busca os projetos do cliente
-      return dbRef.projetos.child(clienteId).once("value");
-    })
-    .then((snapshotProjetos) => {
-      console.log("Resposta recebida do Supabase para projetos");
 
-      const projetos = snapshotProjetos.val();
-      console.log("Dados dos projetos:", projetos);
+    // 2. Buscar os projetos associados a esse cliente
+    const { data: projetos, error: projetosError } = await window.supabase
+      .from('projetos') // Nome da sua tabela de projetos
+      .select('*')
+      .eq('cliente_id', clienteId);
 
-      // Se não há projetos, apenas exibe o modal
-      if (!projetos || objetoVazio(projetos)) {
-        console.log("Nenhum projeto encontrado para este cliente");
+    if (projetosError) {
+      console.error("Erro ao buscar projetos:", projetosError);
+      // Não lançar erro aqui, pode ser que o cliente não tenha projetos ainda
+      mostrarNotificacao(`Erro ao buscar projetos: ${projetosError.message}`, "warning");
+    }
 
-        // Exibe o modal
-        const modalCadastro = new bootstrap.Modal(
-          document.getElementById("modalCadastro")
-        );
-        modalCadastro.show();
+    console.log("Dados dos projetos:", projetos);
 
-        return;
-      }
+    if (projetos && projetos.length > 0) {
+      projetos.forEach((projeto) => {
+        const tipoProjeto = projeto.tipo_projeto; // Ex: "PVC", "Aluminio"
+        const checkboxTipo = document.getElementById(`tipo${tipoProjeto}`); // Ex: id="tipoPVC"
 
-      // Marca os checkboxes de tipos de projeto e exibe as áreas correspondentes
-      Object.keys(projetos).forEach((tipoProjeto) => {
-        const checkbox = document.getElementById(`tipo${tipoProjeto}`);
-        if (checkbox) {
-          checkbox.checked = true;
+        if (checkboxTipo) {
+          checkboxTipo.checked = true;
+          const areaTipo = document.getElementById(`area${tipoProjeto}`); // Ex: id="areaPVC"
+          if (areaTipo) areaTipo.classList.remove("d-none");
 
-          // Exibe a área do projeto
-          const areaTipo = document.getElementById(`area${tipoProjeto}`);
-          if (areaTipo) {
-            areaTipo.classList.remove("d-none");
-          }
+          if (projeto.terceirizado) {
+            const checkboxTerceirizado = document.getElementById(`${tipoProjeto.toLowerCase()}Terceirizado`);
+            if (checkboxTerceirizado) checkboxTerceirizado.checked = true;
 
-          // Se for terceirizado, marca o checkbox e exibe a área correspondente
-          if (projetos[tipoProjeto].terceirizado) {
-            const checkboxTerceirizado = document.getElementById(
-              `${tipoProjeto.toLowerCase()}Terceirizado`
-            );
-            if (checkboxTerceirizado) {
-              checkboxTerceirizado.checked = true;
+            const areaTerceirizado = document.getElementById(`area${tipoProjeto}Terceirizado`);
+            const areaProducao = document.getElementById(`area${tipoProjeto}Producao`);
+            if (areaTerceirizado) areaTerceirizado.classList.remove("d-none");
+            if (areaProducao) areaProducao.classList.add("d-none");
 
-              // Exibe a área de terceirização
-              const areaTerceirizado = document.getElementById(
-                `area${tipoProjeto}Terceirizado`
-              );
-              const areaProducao = document.getElementById(
-                `area${tipoProjeto}Producao`
-              );
+            const empresaInput = document.getElementById(`empresa${tipoProjeto}`);
+            if (empresaInput) empresaInput.value = projeto.empresa_terceirizada || "";
 
-              if (areaTerceirizado) {
-                areaTerceirizado.classList.remove("d-none");
-              }
-
-              if (areaProducao) {
-                areaProducao.classList.add("d-none");
-              }
-
-              // Preenche os campos de terceirização
-              const empresa = document.getElementById(`empresa${tipoProjeto}`);
-              if (empresa) {
-                empresa.value = projetos[tipoProjeto].empresa || "";
-              }
-
-              // Formata a data de solicitação
-              if (projetos[tipoProjeto].dataSolicitacao) {
-                const data = new Date(projetos[tipoProjeto].dataSolicitacao);
-                const dia = String(data.getDate()).padStart(2, "0");
-                const mes = String(data.getMonth() + 1).padStart(2, "0");
-                const ano = data.getFullYear();
-
-                const dataSolicitacao = document.getElementById(
-                  `dataSolicitacao${tipoProjeto}`
-                );
-                if (dataSolicitacao) {
-                  dataSolicitacao.value = `${dia}/${mes}/${ano}`;
-                }
-              }
-
-              // Formata a data de prazo de entrega
-              if (projetos[tipoProjeto].prazoEntrega) {
-                const data = new Date(projetos[tipoProjeto].prazoEntrega);
-                const dia = String(data.getDate()).padStart(2, "0");
-                const mes = String(data.getMonth() + 1).padStart(2, "0");
-                const ano = data.getFullYear();
-
-                const prazoEntrega = document.getElementById(
-                  `prazoEntrega${tipoProjeto}`
-                );
-                if (prazoEntrega) {
-                  prazoEntrega.value = `${dia}/${mes}/${ano}`;
-                }
-              }
+            const dataSolicitacaoInput = document.getElementById(`dataSolicitacao${tipoProjeto}`);
+            if (dataSolicitacaoInput && projeto.data_solicitacao_terceirizada) {
+                dataSolicitacaoInput.value = formatarDataParaInput(projeto.data_solicitacao_terceirizada);
             }
-          } else {
-            // Exibe a área de produção própria
-            const areaProducao = document.getElementById(
-              `area${tipoProjeto}Producao`
-            );
-            if (areaProducao) {
-              areaProducao.classList.remove("d-none");
+
+            const prazoEntregaInput = document.getElementById(`prazoEntrega${tipoProjeto}`);
+            if (prazoEntregaInput && projeto.prazo_entrega_terceirizada) {
+                prazoEntregaInput.value = formatarDataParaInput(projeto.prazo_entrega_terceirizada);
+            }
+
+            // Preencher nome do arquivo para lista de chaves terceirizado (se houver URL)
+            if(projeto.url_lista_chaves) {
+                const filePreview = document.getElementById(`filePreviewListaChaves${tipoProjeto}Terceirizado`);
+                if(filePreview) filePreview.textContent = extrairNomeArquivoDeUrl(projeto.url_lista_chaves) || "Arquivo carregado";
+            }
+
+          } else { // Produção própria
+            const areaProducao = document.getElementById(`area${tipoProjeto}Producao`);
+            if (areaProducao) areaProducao.classList.remove("d-none");
+            const areaTerceirizado = document.getElementById(`area${tipoProjeto}Terceirizado`);
+             if (areaTerceirizado) areaTerceirizado.classList.add("d-none");
+
+
+            // Preencher nomes dos arquivos para listas de produção própria
+            // Exemplo para lista de chaves (adapte para outras listas e tipos)
+            if(projeto.url_lista_chaves) {
+                const filePreview = document.getElementById(`filePreviewListaChaves${tipoProjeto}`); // Ex: filePreviewListaChavesPVC
+                if(filePreview) filePreview.textContent = extrairNomeArquivoDeUrl(projeto.url_lista_chaves) || "Arquivo carregado";
+            }
+            // Adicionar lógica similar para outras listas (LPVC, LPerfil, etc.)
+            // Ex:
+            // if(projeto.url_lista_pvc) {
+            //     const filePreviewPVC = document.getElementById(`filePreviewListaPVC${tipoProjeto}`);
+            //     if(filePreviewPVC) filePreviewPVC.textContent = extrairNomeArquivoDeUrl(projeto.url_lista_pvc) || "Arquivo carregado";
+            // }
+             if (tipoProjeto === "Outros" && projeto.custom_lists) { // Se custom_lists for um JSON [{name, url}, ...]
+                // Lógica para popular listas personalizadas
+                // Isso vai depender de como você estruturou o HTML para listas "Outros" dinâmicas
+                // Pode ser necessário recriar os inputs de nome e exibir os nomes dos arquivos
             }
           }
         }
       });
+    }
 
-      // Exibe o modal
-      const modalCadastro = new bootstrap.Modal(
-        document.getElementById("modalCadastro")
-      );
-      modalCadastro.show();
-    })
-    .catch((error) => {
-      console.error("Erro ao editar cliente:", error);
-      mostrarNotificacao("Erro ao editar cliente. Tente novamente.", "danger");
-      console.log("=== FIM DA FUNÇÃO EDITAR CLIENTE - ERRO ===");
-    });
+    const modalCadastro = new bootstrap.Modal(document.getElementById("modalCadastro"));
+    modalCadastro.show();
+
+  } catch (error) {
+    console.error("Erro ao editar cliente (Supabase):", error);
+    mostrarNotificacao(`Erro ao carregar dados para edição: ${error.message}`, "danger");
+    console.log("=== FIM DA FUNÇÃO EDITAR CLIENTE (SUPABASE) - ERRO ===");
+  }
 }
 
 /**
@@ -539,87 +508,64 @@ async function salvarCadastro() {
 
   // Validação específica para o tipo de projeto "Outros"
   if (document.getElementById("tipoOutros").checked) {
-    const nomeProjetoOutros = document
-      .getElementById("nomeProjetoOutros")
-      .value.trim();
-    if (!nomeProjetoOutros) {
-      mostrarNotificacao("Informe o nome do projeto personalizado.", "warning");
+    const nomeProjetoOutrosInput = document.getElementById("nomeProjetoOutros");
+    if (nomeProjetoOutrosInput && !nomeProjetoOutrosInput.value.trim()) {
+      mostrarNotificacao("Informe o nome do projeto personalizado para 'Outros'.", "warning");
       return;
     }
   }
 
   // Obtém os valores do formulário
   const nomeCliente = document.getElementById("cliente").value;
-  const prazoEntrega = document.getElementById("dataPrazoEntrega").value;
+  const prazoEntregaInput = document.getElementById("dataPrazoEntrega").value;
 
-  // Captura informações do projeto personalizado (Outros)
-  let nomeProjetoOutros = "";
-  let listasPersonalizadas = [];
-
-  if (document.getElementById("tipoOutros").checked) {
-    nomeProjetoOutros = document
-      .getElementById("nomeProjetoOutros")
-      .value.trim();
-
-    // Se não for terceirizado, captura as listas personalizadas
-    if (!document.getElementById("outrosTerceirizado").checked) {
-      const listasContainer = document.getElementById(
-        "listasPersonalizadasContainer"
-      );
-      const listasItems = listasContainer.querySelectorAll(
-        ".lista-personalizada"
-      );
-
-      listasItems.forEach((item) => {
-        const nomeLista = item
-          .querySelector(".nome-lista-personalizada")
-          .value.trim();
-        const arquivoLista = item.querySelector(".arquivo-lista-personalizada")
-          .files[0];
-
-        if (nomeLista && arquivoLista) {
-          listasPersonalizadas.push({
-            nome: nomeLista,
-            arquivo: arquivoLista,
-          });
-        }
-      });
+  // Converte a data para o formato ISO YYYY-MM-DD ou timestamp, dependendo do BD
+  let prazoEntregaFormatado = null;
+  if (prazoEntregaInput) {
+    const dataParts = prazoEntregaInput.split("/");
+    if (dataParts.length === 3) {
+      prazoEntregaFormatado = new Date(
+        parseInt(dataParts[2]),
+        parseInt(dataParts[1]) - 1, // Mês é 0-indexed
+        parseInt(dataParts[0])
+      ).toISOString();
     }
   }
 
-  // Converte a data para timestamp
-  const dataParts = prazoEntrega.split("/");
-  const prazoEntregaTimestamp = new Date(
-    parseInt(dataParts[2]),
-    parseInt(dataParts[1]) - 1,
-    parseInt(dataParts[0])
-  ).getTime();
-
   // Verifica se é uma edição ou um novo cadastro
-  const clienteId =
-    document.getElementById("modalCadastro").dataset.clienteId || gerarId();
-  const isEditing =
-    !!document.getElementById("modalCadastro").dataset.clienteId;
+  const clienteIdModal = document.getElementById("modalCadastro").dataset.clienteId;
+  const isEditing = !!clienteIdModal;
+  const clienteId = clienteIdModal || gerarId(); // Supabase pode gerar ID se não fornecido em insert
 
   // Prepara os dados do cliente
   const clienteData = {
     nome: nomeCliente,
-    prazoEntrega: prazoEntregaTimestamp,
-    ultimaAtualizacao: Date.now(),
+    prazoEntrega: prazoEntregaFormatado,
+    ultimaAtualizacao: new Date().toISOString(),
   };
 
-  if (!isEditing) {
-    clienteData.dataCriacao = Date.now();
-    clienteData.StatusCadastro = "Não iniciado";
+  if (isEditing) {
+    clienteData.id = clienteId; // Necessário para upsert identificar o registro a ser atualizado
+  } else {
+    clienteData.dataCriacao = new Date().toISOString();
+    clienteData.StatusCadastro = "Não iniciado"; // Status inicial para novos clientes
+    // Se o seu BD gera o ID, não precisa incluir clienteData.id aqui para inserts
   }
 
-  if (document.getElementById("tipoOutros").checked && nomeProjetoOutros) {
-    clienteData.projetoOutrosNome = nomeProjetoOutros;
+  // Captura informações do projeto personalizado (Outros)
+  let nomeProjetoOutros = "";
+  if (document.getElementById("tipoOutros").checked) {
+    const nomeProjetoOutrosInput = document.getElementById("nomeProjetoOutros");
+    if (nomeProjetoOutrosInput) nomeProjetoOutros = nomeProjetoOutrosInput.value.trim();
+    if (nomeProjetoOutros) {
+        clienteData.projetoOutrosNome = nomeProjetoOutros; // Adiciona ao clienteData se relevante
+    }
   }
+
 
   const tiposProjetoSelecionados = [];
   document.querySelectorAll(".tipo-projeto:checked").forEach((checkbox) => {
-    tiposProjetoSelecionados.push(checkbox.value);
+    tiposProjetoSelecionados.push(checkbox.value); // ex: "PVC", "Aluminio"
   });
 
   if (tiposProjetoSelecionados.length === 0) {
@@ -627,91 +573,204 @@ async function salvarCadastro() {
     return;
   }
 
-  try {
-    // *** INÍCIO DA CORREÇÃO LÓGICA ***
+  // Função auxiliar para upload de arquivos
+  async function uploadArquivo(arquivo, caminho) {
+    if (!arquivo) return null;
+    try {
+      const { data, error } = await window.supabase.storage
+        .from('listas-materiais') // Nome do seu bucket de storage
+        .upload(caminho, arquivo, {
+          cacheControl: '3600',
+          upsert: true // Sobrescreve se já existir um arquivo com o mesmo nome/caminho
+        });
 
-    // 1. Busca os projetos existentes se estiver em modo de edição
-    let projetosExistentes = {};
-    if (isEditing) {
-      const snapshotProjetos = await dbRef.projetos
-        .child(clienteId)
-        .once("value");
-      projetosExistentes = snapshotProjetos.val() || {};
+      if (error) {
+        console.error('Erro no upload do arquivo:', caminho, error);
+        throw error;
+      }
+
+      // Obter a URL pública do arquivo
+      const { data: publicUrlData } = window.supabase.storage
+        .from('listas-materiais')
+        .getPublicUrl(data.path);
+
+      if (!publicUrlData || !publicUrlData.publicUrl) {
+          console.error("Não foi possível obter a URL pública para:", data.path);
+          return null; // Ou uma URL padrão / indicativo de erro
+      }
+      return publicUrlData.publicUrl;
+
+    } catch (uploadError) {
+      console.error(`Falha ao fazer upload de ${caminho}:`, uploadError);
+      mostrarNotificacao(`Erro ao fazer upload do arquivo ${arquivo.name}.`, "danger");
+      return null; // Retorna null para indicar falha no upload específico
+    }
+  }
+
+
+  try {
+    // 1. Salvar/Atualizar dados do cliente
+    const { data: clienteSalvo, error: clienteError } = await window.supabase
+      .from('clientes')
+      .upsert(clienteData)
+      .select() // Para retornar o registro salvo/atualizado, incluindo o ID gerado se for novo
+      .single(); // Assumindo que upsert de um único item retorna um único resultado ou erro
+
+    if (clienteError) {
+      console.error("Erro ao salvar cliente:", clienteError);
+      mostrarNotificacao(`Erro ao salvar dados do cliente: ${clienteError.message}`, "danger");
+      return;
     }
 
-    // 2. Constrói o novo objeto de projetos, preservando as listas existentes
-    const projetosParaSalvar = {};
-    tiposProjetoSelecionados.forEach((tipo) => {
-      const projetoExistente = projetosExistentes[tipo] || {}; // Pega dados do projeto específico
+    const effectiveClienteId = clienteSalvo.id; // ID definitivo do cliente (novo ou existente)
 
-      // Inicia o objeto do projeto com as listas existentes para não apagá-las
-      const tipoProjeto = {
-        terceirizado: false, // Valor padrão
-        listas: projetoExistente.listas || {}, // PRESERVA a estrutura de listas existente
+    // 2. Processar e salvar dados de cada tipo de projeto selecionado
+    for (const tipo of tiposProjetoSelecionados) {
+      const projetoData = {
+        cliente_id: effectiveClienteId, // Chave estrangeira para o cliente
+        tipo_projeto: tipo, // Ex: "PVC", "Aluminio"
+        terceirizado: false,
+        // Inicializa campos que podem ou não ser preenchidos
+        empresa_terceirizada: null,
+        data_solicitacao_terceirizada: null,
+        prazo_entrega_terceirizada: null,
+        // URLs dos arquivos de lista, inicializadas como null
+        url_lista_chaves: null,
+        // Adicione mais campos de URL de lista conforme necessário para cada tipo
+        // Ex: url_lista_pvc: null, url_lista_perfil: null, etc.
       };
 
-      // Atualiza os dados conforme o formulário
-      const checkboxTerceirizado = document.getElementById(
-        `${tipo.toLowerCase()}Terceirizado`
-      );
+      const checkboxTerceirizado = document.getElementById(`${tipo.toLowerCase()}Terceirizado`);
       if (checkboxTerceirizado && checkboxTerceirizado.checked) {
-        tipoProjeto.terceirizado = true;
+        projetoData.terceirizado = true;
+        projetoData.empresa_terceirizada = document.getElementById(`empresa${tipo}`)?.value || null;
 
-        const empresa = document.getElementById(`empresa${tipo}`).value;
-        const dataSolicitacao = document.getElementById(
-          `dataSolicitacao${tipo}`
-        ).value;
-        const prazoEntregaTerceirizado = document.getElementById(
-          `prazoEntrega${tipo}`
-        ).value;
-
-        tipoProjeto.empresa = empresa;
-
-        if (dataSolicitacao) {
-          const parts = dataSolicitacao.split("/");
-          tipoProjeto.dataSolicitacao = new Date(
-            parseInt(parts[2]),
-            parseInt(parts[1]) - 1,
-            parseInt(parts[0])
-          ).getTime();
+        const dataSolicitacaoInput = document.getElementById(`dataSolicitacao${tipo}`)?.value;
+        if (dataSolicitacaoInput) {
+            const dsParts = dataSolicitacaoInput.split('/');
+            projetoData.data_solicitacao_terceirizada = new Date(parseInt(dsParts[2]), parseInt(dsParts[1]) - 1, parseInt(dsParts[0])).toISOString();
         }
 
-        if (prazoEntregaTerceirizado) {
-          const parts = prazoEntregaTerceirizado.split("/");
-          tipoProjeto.prazoEntrega = new Date(
-            parseInt(parts[2]),
-            parseInt(parts[1]) - 1,
-            parseInt(parts[0])
-          ).getTime();
+        const prazoEntregaTerceirizadoInput = document.getElementById(`prazoEntrega${tipo}`)?.value;
+        if (prazoEntregaTerceirizadoInput) {
+            const petParts = prazoEntregaTerceirizadoInput.split('/');
+            projetoData.prazo_entrega_terceirizada = new Date(parseInt(petParts[2]), parseInt(petParts[1]) - 1, parseInt(petParts[0])).toISOString();
+        }
+        // Upload da lista de chaves para terceirizado
+        const inputChavesTerceirizado = document.getElementById(`listaChaves${tipo}Terceirizado`);
+        if (inputChavesTerceirizado && inputChavesTerceirizado.files.length > 0) {
+            const arquivo = inputChavesTerceirizado.files[0];
+            const caminho = `clientes/${effectiveClienteId}/${tipo}/terceirizado/LChaves_${arquivo.name}`;
+            projetoData.url_lista_chaves = await uploadArquivo(arquivo, caminho);
+        }
+
+      } else { // Não terceirizado - produção própria
+        // Definir quais listas são aplicáveis para este tipo de projeto (não terceirizado)
+        let listasParaUpload = [];
+        switch (tipo) {
+            case "PVC":
+                listasParaUpload = [
+                    { idInput: "listaChavesPVC", nomeListaSupabase: "url_lista_chaves", nomeOriginal: "LChaves" },
+                    { idInput: "listaPVC", nomeListaSupabase: "url_lista_pvc", nomeOriginal: "LPVC" },
+                    // ... outras listas para PVC
+                ];
+                break;
+            case "Aluminio":
+                 listasParaUpload = [
+                    { idInput: "listaChavesAluminio", nomeListaSupabase: "url_lista_chaves", nomeOriginal: "LChaves" },
+                    { idInput: "listaPerfil", nomeListaSupabase: "url_lista_perfil", nomeOriginal: "LPerfil" },
+                    // ... outras listas para Aluminio
+                ];
+                break;
+            // ... outros casos para Brise, ACM, Trilho
+            case "Outros":
+                listasParaUpload = [ { idInput: "listaChavesOutros", nomeListaSupabase: "url_lista_chaves", nomeOriginal: "LChaves" } ];
+                // Lógica para listas personalizadas do tipo "Outros"
+                const listasContainer = document.getElementById("listasPersonalizadasContainer");
+                if (listasContainer) {
+                    const listasItems = listasContainer.querySelectorAll(".lista-personalizada");
+                    listasItems.forEach((item, index) => {
+                        const nomeListaInput = item.querySelector(".nome-lista-personalizada");
+                        const arquivoListaInput = item.querySelector(".arquivo-lista-personalizada");
+                        if (nomeListaInput && nomeListaInput.value.trim() && arquivoListaInput && arquivoListaInput.files.length > 0) {
+                            const nomeListaSanitizado = nomeListaInput.value.trim().replace(/\s+/g, '_');
+                            // Adiciona à estrutura de upload, garantindo nome de campo único no Supabase
+                            // Você precisará de uma forma de mapear isso para colunas no Supabase,
+                            // ou armazenar como JSON se for um número variável de listas.
+                            // Exemplo: assumindo colunas como url_lista_outro_1, url_lista_outro_2, etc.
+                            // Ou, um campo JSON `custom_lists: [{name: "nome", url: "url"}, ...]`
+                            listasParaUpload.push({
+                                idInput: `arquivoListaPersonalizada_${index}`, // Precisa de um ID único para o input se não tiver
+                                fileObject: arquivoListaInput.files[0], // Passa o objeto do arquivo diretamente
+                                nomeListaSupabase: `url_lista_outro_${nomeListaSanitizado}`, // Ou lógica de JSON
+                                nomeOriginal: `L${nomeListaSanitizado}`
+                            });
+                        }
+                    });
+                }
+                break;
+        }
+
+        for (const lista of listasParaUpload) {
+            let arquivo;
+            if (lista.fileObject) { // Para listas personalizadas "Outros"
+                arquivo = lista.fileObject;
+            } else { // Para listas padrão
+                const inputFile = document.getElementById(lista.idInput);
+                if (inputFile && inputFile.files.length > 0) {
+                    arquivo = inputFile.files[0];
+                }
+            }
+
+            if (arquivo) {
+                const caminho = `clientes/${effectiveClienteId}/${tipo}/producao/${lista.nomeOriginal}_${arquivo.name}`;
+                const urlArquivo = await uploadArquivo(arquivo, caminho);
+                if (urlArquivo) {
+                    projetoData[lista.nomeListaSupabase] = urlArquivo;
+                }
+            }
         }
       }
 
-      projetosParaSalvar[tipo] = tipoProjeto;
-    });
+      // Verificar se já existe um projeto para este cliente e tipo
+      // Se sim, obter o ID para fazer upsert corretamente no projeto
+      // Isso é importante se um cliente pode ter múltiplos projetos do mesmo tipo ou se você quer apenas ATUALIZAR
+      // Se a relação é 1 cliente para 1 projeto de cada tipo, o upsert com (cliente_id, tipo_projeto) como
+      // identificadores únicos (constraint no BD) funcionaria bem.
+      // Se não, você pode precisar buscar primeiro. Ex:
+      // const { data: projetoExistente, error: errBusca } = await window.supabase
+      //    .from('projetos')
+      //    .select('id')
+      //    .eq('cliente_id', effectiveClienteId)
+      //    .eq('tipo_projeto', tipo)
+      //    .maybeSingle();
+      // if (projetoExistente) projetoData.id = projetoExistente.id;
 
-    // 3. Salva os dados do cliente e os projetos usando 'update'
-    await dbRef.clientes.child(clienteId).update(clienteData);
-    await dbRef.projetos.child(clienteId).update(projetosParaSalvar);
+      const { error: projetoError } = await window.supabase
+        .from('projetos') // Sua tabela de projetos
+        .upsert(projetoData);
 
-    // *** FIM DA CORREÇÃO LÓGICA ***
+      if (projetoError) {
+        console.error(`Erro ao salvar projeto ${tipo}:`, projetoError);
+        mostrarNotificacao(`Erro ao salvar projeto ${tipo}: ${projetoError.message}`, "danger");
+        // Considerar se deve parar ou continuar com outros projetos
+      }
+    }
 
-    // 4. Processa os arquivos de listas
-    await processarArquivosListas(
-      clienteId,
-      tiposProjetoSelecionados,
-      listasPersonalizadas
-    );
+    // Se chegou aqui, tudo (ou a maior parte) foi salvo com sucesso
+    mostrarNotificacao("Cliente e projetos salvos com sucesso!", "success");
+    const modalCadastro = bootstrap.Modal.getInstance(document.getElementById("modalCadastro"));
+    if (modalCadastro) modalCadastro.hide();
 
-    // Exibe mensagem de sucesso e finaliza o processo
-    mostrarNotificacao("Cliente salvo com sucesso!", "success");
-    const modalCadastro = bootstrap.Modal.getInstance(
-      document.getElementById("modalCadastro")
-    );
-    modalCadastro.hide();
-    carregarClientes();
+    if (typeof carregarClientes === "function") {
+      carregarClientes(); // Recarrega a lista de clientes
+    }
+    document.getElementById("formCadastro").reset(); // Limpa o formulário
+    document.getElementById("modalCadastro").dataset.clienteId = ""; // Limpa o ID do cliente do modal
+
   } catch (error) {
-    console.error("Erro ao salvar cadastro:", error);
-    mostrarNotificacao("Erro ao salvar cadastro. Tente novamente.", "danger");
+    console.error("Erro geral ao salvar cadastro:", error);
+    mostrarNotificacao("Erro inesperado ao salvar cadastro. Tente novamente.", "danger");
   }
 }
 
@@ -719,146 +778,6 @@ async function salvarCadastro() {
  * Processa os arquivos de listas para cada tipo de projeto
  * * @param {string} clienteId - ID do cliente
  * @param {Array} tiposSelecionados - Tipos de projeto selecionados
- * @param {Array} listasPersonalizadas - Listas personalizadas para o tipo "Outros"
- * @returns {Promise} - Promise que resolve quando todos os arquivos forem processados
- */
-function processarArquivosListas(
-  clienteId,
-  tiposSelecionados,
-  listasPersonalizadas = []
-) {
-  // Array para armazenar todas as promessas de processamento
-  const promessas = [];
-
-  // Para cada tipo de projeto
-  tiposSelecionados.forEach((tipo) => {
-    // Verifica se o tipo é terceirizado
-    const checkboxTerceirizado = document.getElementById(
-      `${tipo.toLowerCase()}Terceirizado`
-    );
-    if (checkboxTerceirizado && checkboxTerceirizado.checked) {
-      // Se for terceirizado, processa apenas a lista de chaves
-      const inputChaves = document.getElementById(
-        `listaChaves${tipo}Terceirizado`
-      );
-      if (inputChaves && inputChaves.files.length > 0) {
-        const promessa = new Promise((resolve, reject) => {
-          processarArquivo(inputChaves.files[0], clienteId, tipo, "LChaves")
-            .then(resolve)
-            .catch(reject);
-        });
-        promessas.push(promessa);
-      }
-      return;
-    }
-
-    // Define as listas para cada tipo de projeto
-    let listas = [];
-
-    switch (tipo) {
-      case "PVC":
-        listas = [
-          { id: "listaChavesPVC", nome: "LChaves" },
-          { id: "listaPVC", nome: "LPVC" },
-          { id: "listaReforco", nome: "LReforco" },
-          { id: "listaFerragens", nome: "LFerragens" },
-          { id: "listaVidros", nome: "LVidros" },
-          { id: "listaEsteira", nome: "LEsteira" },
-          { id: "listaMotor", nome: "LMotor" },
-          { id: "listaAcabamento", nome: "LAcabamento" },
-          { id: "listaTelaRetratil", nome: "LTelaRetratil" },
-          { id: "listaAco", nome: "LAco" },
-          { id: "listaOutrosPVC", nome: "LOutros" },
-        ];
-        break;
-      case "Aluminio":
-        listas = [
-          { id: "listaChavesAluminio", nome: "LChaves" },
-          { id: "listaPerfil", nome: "LPerfil" },
-          { id: "listaContraMarco", nome: "LContraMarco" },
-          { id: "listaFerragensAluminio", nome: "LFerragens" },
-          { id: "listaVidroAluminio", nome: "LVidro" },
-          { id: "listaMotorAluminio", nome: "LMotor" },
-          { id: "listaEsteiraAluminio", nome: "LEsteira" },
-          { id: "listaAcabamentoAluminio", nome: "LAcabamento" },
-          { id: "listaTelaRetratilAluminio", nome: "LTelaRetratil" },
-          { id: "listaOutrosAluminio", nome: "LOutros" },
-        ];
-        break;
-      case "Brise":
-        listas = [
-          { id: "listaChavesBrise", nome: "LChaves" },
-          { id: "listaPerfilBrise", nome: "LPerfil" },
-          { id: "listaFerragensBrise", nome: "LFerragens" },
-          { id: "listaConexaoBrise", nome: "LConexao" },
-          { id: "listaFechaduraEletronicaBrise", nome: "LFechaduraEletronica" },
-          { id: "listaOutrosBrise", nome: "LOutros" },
-        ];
-        break;
-      case "ACM":
-        listas = [
-          { id: "listaChavesACM", nome: "LChaves" },
-          { id: "listaPerfilACM", nome: "LPerfil" },
-          { id: "listaFerragensACM", nome: "LFerragens" },
-          { id: "listaConexaoACM", nome: "LConexao" },
-          { id: "listaChapaACM", nome: "LChapaACM" },
-          { id: "listaFechaduraEletronicaACM", nome: "LFechaduraEletronica" },
-          { id: "listaOutrosACM", nome: "LOutros" },
-        ];
-        break;
-      case "Trilho":
-        listas = [
-          { id: "listaChavesTrilho", nome: "LChaves" },
-          { id: "listaPerfilTrilho", nome: "LPerfil" },
-          { id: "listaOutrosTrilho", nome: "LOutros" },
-        ];
-        break;
-      case "Outros":
-        listas = [{ id: "listaChavesOutros", nome: "LChaves" }];
-        break;
-    }
-
-    // Para cada lista do tipo de projeto
-    listas.forEach((lista) => {
-      const inputFile = document.getElementById(lista.id);
-
-      // Verifica se há arquivo selecionado
-      if (inputFile && inputFile.files.length > 0) {
-        // Cria uma promessa para processar o arquivo
-        const promessa = new Promise((resolve, reject) => {
-          // Chama a função de processamento de arquivo (implementada em processamento-arquivos.js)
-          processarArquivo(inputFile.files[0], clienteId, tipo, lista.nome)
-            .then(resolve)
-            .catch(reject);
-        });
-
-        // Adiciona a promessa ao array
-        promessas.push(promessa);
-      }
-    });
-
-    // Processa listas personalizadas para o tipo "Outros"
-    if (tipo === "Outros" && listasPersonalizadas.length > 0) {
-      listasPersonalizadas.forEach((lista) => {
-        // Cria uma promessa para processar o arquivo
-        const promessa = new Promise((resolve, reject) => {
-          // Chama a função de processamento de arquivo com o nome personalizado
-          processarArquivo(lista.arquivo, clienteId, tipo, `L${lista.nome}`)
-            .then(resolve)
-            .catch(reject);
-        });
-
-        // Adiciona a promessa ao array
-        promessas.push(promessa);
-      });
-    }
-  });
-
-  // Retorna uma promessa que resolve quando todas as promessas de processamento forem resolvidas
-  return Promise.all(promessas);
-}
-
-/**
  * Adiciona uma nova lista personalizada para o tipo de projeto "Outros"
  */
 function adicionarListaPersonalizada() {
@@ -959,8 +878,8 @@ function gerarId() {
  * * @param {number} timestamp - Timestamp da data
  * @returns {string} - Data formatada
  */
-function formatarData(timestamp) {
-  const data = new Date(timestamp);
+function formatarData(timestampOrIsoString) {
+  const data = new Date(timestampOrIsoString); // Date constructor handles both timestamps and ISO strings
   const dia = String(data.getDate()).padStart(2, "0");
   const mes = String(data.getMonth() + 1).padStart(2, "0");
   const ano = data.getFullYear();
@@ -1001,4 +920,46 @@ function mostrarNotificacao(mensagem, tipo) {
       notificacao.remove();
     }, 150);
   }, 5000);
+}
+
+/**
+ * Formata uma data (timestamp ou string ISO) para o formato DD/MM/YYYY, adequado para inputs de data.
+ * @param {string|number} dateStringOrTimestamp - A data em formato ISO 8601 ou timestamp.
+ * @returns {string} - Data formatada como DD/MM/YYYY.
+ */
+function formatarDataParaInput(dateStringOrTimestamp) {
+  if (!dateStringOrTimestamp) return "";
+  try {
+    const data = new Date(dateStringOrTimestamp);
+    const dia = String(data.getDate()).padStart(2, "0");
+    const mes = String(data.getMonth() + 1).padStart(2, "0"); // Mês é 0-indexed
+    const ano = data.getFullYear();
+    return `${dia}/${mes}/${ano}`;
+  } catch (e) {
+    console.error("Erro ao formatar data para input:", e);
+    return ""; // Retorna vazio se houver erro na formatação
+  }
+}
+
+/**
+ * Extrai o nome do arquivo de uma URL do Supabase Storage.
+ * Ex: https://project.supabase.co/storage/v1/object/public/bucket/path/to/LChaves_arquivo.xlsx -> LChaves_arquivo.xlsx
+ * @param {string} url - A URL completa do arquivo.
+ * @returns {string|null} - O nome do arquivo ou null se não puder ser extraído.
+ */
+function extrairNomeArquivoDeUrl(url) {
+    if (!url) return null;
+    try {
+        const urlParts = url.split('/');
+        const nomeArquivoComQueryParams = urlParts.pop(); // Pega a última parte: "LChaves_arquivo.xlsx?token=..."
+        if (nomeArquivoComQueryParams) {
+            const nomeArquivo = nomeArquivoComQueryParams.split('?')[0]; // Remove query params
+             // Decodifica componentes da URI que podem estar codificados (ex: %20 para espaço)
+            return decodeURIComponent(nomeArquivo);
+        }
+        return null;
+    } catch (e) {
+        console.error("Erro ao extrair nome do arquivo da URL:", url, e);
+        return null;
+    }
 }

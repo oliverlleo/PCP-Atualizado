@@ -11,403 +11,241 @@
  * 
  * @param {string} clienteId - ID do cliente a ser visualizado
  */
-function visualizarCliente(clienteId) {
-    console.log('=== INÍCIO DA FUNÇÃO VISUALIZAR CLIENTE ===');
+async function visualizarCliente(clienteId) {
+    console.log('=== INÍCIO DA FUNÇÃO VISUALIZAR CLIENTE (SUPABASE) ===');
     console.log('Iniciando visualização do cliente com ID:', clienteId);
-    console.log('dbRef disponível:', dbRef ? 'Sim' : 'Não');
-    
-    if (!dbRef) {
-        console.error('ERRO CRÍTICO: dbRef não está definido!');
+
+    if (!window.supabase) {
+        console.error('ERRO CRÍTICO: Supabase client (window.supabase) não está definido!');
         mostrarNotificacao('Erro de conexão com o banco de dados. Recarregue a página.', 'danger');
         return;
     }
-    
-    // Mostra o indicador de carregamento
-    document.getElementById('loadingVisualizacao').classList.remove('d-none');
-    document.getElementById('conteudoVisualizacao').classList.add('d-none');
-    
-    // Limpa o conteúdo anterior
-    document.getElementById('listasProjetos').innerHTML = '';
-    document.getElementById('detalhesLista').innerHTML = '';
-    
-    // Armazena o ID do cliente para uso em outras funções
-    document.getElementById('modalVisualizacao').dataset.clienteId = clienteId;
-    
-    console.log('Preparando para buscar dados do cliente:', clienteId);
-    console.log('Caminho da consulta:', `clientes/${clienteId}`);
-    
+
+    const loadingVisualizacao = document.getElementById('loadingVisualizacao');
+    const conteudoVisualizacao = document.getElementById('conteudoVisualizacao');
+    const listasProjetosDiv = document.getElementById('listasProjetos');
+    const detalhesListaDiv = document.getElementById('detalhesLista');
+    const modalVisualizacaoElement = document.getElementById('modalVisualizacao');
+
+    if (loadingVisualizacao) loadingVisualizacao.classList.remove('d-none');
+    if (conteudoVisualizacao) conteudoVisualizacao.classList.add('d-none');
+    if (listasProjetosDiv) listasProjetosDiv.innerHTML = '';
+    if (detalhesListaDiv) detalhesListaDiv.innerHTML = '';
+    if (modalVisualizacaoElement) modalVisualizacaoElement.dataset.clienteId = clienteId;
+
     try {
-        // Busca os dados do cliente no Firebase
-        console.log('Iniciando consulta ao Firebase para dados do cliente');
-        dbRef.clientes.child(clienteId).once('value')
-            .then(snapshotCliente => {
-                console.log('Resposta recebida do Firebase para dados do cliente');
-                console.log('Snapshot existe:', snapshotCliente ? 'Sim' : 'Não');
-                console.log('Snapshot válido:', snapshotCliente.exists() ? 'Sim' : 'Não');
-                
-                const cliente = snapshotCliente.val();
-                console.log('Dados do cliente:', cliente);
-                
-                if (!cliente) {
-                    console.error('Cliente não encontrado no Firebase');
-                    throw new Error('Cliente não encontrado');
+        // 1. Buscar dados do cliente
+        const { data: cliente, error: clienteError } = await window.supabase
+            .from('clientes')
+            .select('*')
+            .eq('id', clienteId)
+            .single();
+
+        if (clienteError) {
+            console.error("Erro ao buscar cliente no Supabase:", clienteError);
+            throw new Error(`Cliente não encontrado: ${clienteError.message}`);
+        }
+        if (!cliente) {
+            throw new Error('Cliente não encontrado no Supabase.');
+        }
+
+        console.log('Dados do cliente (Supabase):', cliente);
+
+        // Preenche os dados do cliente no modal
+        document.getElementById('visualizacaoTitulo').textContent = cliente.nome || 'Cliente sem nome';
+        document.getElementById('visualizacaoStatus').textContent = cliente.StatusCadastro || 'Não iniciado'; // Corrigido para StatusCadastro
+        document.getElementById('visualizacaoStatus').className = `badge ${getBadgeClass(cliente.StatusCadastro)}`; // Corrigido
+
+        document.getElementById('visualizacaoDataCriacao').textContent = formatarData(cliente.dataCriacao);
+        document.getElementById('visualizacaoPrazoEntrega').textContent = formatarData(cliente.prazoEntrega);
+
+        // 2. Buscar os projetos associados a esse cliente
+        const { data: projetos, error: projetosError } = await window.supabase
+            .from('projetos') // Nome da sua tabela de projetos no Supabase
+            .select('*')
+            .eq('cliente_id', clienteId);
+
+        if (projetosError) {
+            console.error("Erro ao buscar projetos no Supabase:", projetosError);
+            // Não lançar erro aqui necessariamente, pode ser que o cliente não tenha projetos.
+            // A interface tratará a ausência de projetos.
+            mostrarNotificacao(`Erro ao buscar projetos: ${projetosError.message}`, 'warning');
+        }
+
+        console.log('Dados dos projetos (Supabase):', projetos);
+
+        if (!projetos || projetos.length === 0) {
+            console.log('Nenhum projeto encontrado para este cliente no Supabase');
+            if (listasProjetosDiv) {
+                listasProjetosDiv.innerHTML = `
+                    <div class="alert alert-info">
+                        Este cliente não possui projetos cadastrados.
+                    </div>
+                `;
+            }
+        } else {
+            // Cria os cards para cada tipo de projeto
+            if (listasProjetosDiv) listasProjetosDiv.innerHTML = ''; // Limpa antes de adicionar
+
+            projetos.forEach(projeto => {
+                const tipoProjeto = projeto.tipo_projeto; // Ex: "PVC", "Aluminio"
+                console.log(`Processando projeto (Supabase) ${tipoProjeto}:`, projeto);
+
+                const cardProjeto = document.createElement('div');
+                cardProjeto.className = 'card mb-3 projeto-card';
+                cardProjeto.dataset.tipoProjeto = tipoProjeto;
+
+                const cardHeader = document.createElement('div');
+                cardHeader.className = 'card-header d-flex justify-content-between align-items-center';
+                const tituloCard = document.createElement('h5');
+                tituloCard.className = 'mb-0';
+                tituloCard.textContent = formatarTipoProjeto(tipoProjeto);
+
+                if (projeto.terceirizado) {
+                    const badgeTerceirizado = document.createElement('span');
+                    badgeTerceirizado.className = 'badge bg-info ms-2';
+                    badgeTerceirizado.textContent = 'Terceirizado';
+                    tituloCard.appendChild(badgeTerceirizado);
                 }
-                
-                console.log('Dados do cliente carregados com sucesso:', cliente);
-                
-                // Preenche os dados do cliente no modal
-                document.getElementById('visualizacaoTitulo').textContent = cliente.nome || 'Cliente sem nome';
-                document.getElementById('visualizacaoStatus').textContent = cliente.status || 'Não iniciado';
-                document.getElementById('visualizacaoStatus').className = `badge ${getBadgeClass(cliente.status)}`;
-                
-                // Formata as datas
-                const dataCriacao = formatarData(cliente.dataCriacao);
-                const prazoEntrega = formatarData(cliente.prazoEntrega);
-                
-                document.getElementById('visualizacaoDataCriacao').textContent = dataCriacao;
-                document.getElementById('visualizacaoPrazoEntrega').textContent = prazoEntrega;
-                
-                // Busca os projetos do cliente
-                console.log('Preparando para buscar projetos do cliente');
-                console.log('Caminho da consulta de projetos:', `projetos/${clienteId}`);
-                return dbRef.projetos.child(clienteId).once('value');
-            })
-            .then(snapshotProjetos => {
-                console.log('Resposta recebida do Firebase para projetos');
-                console.log('Snapshot de projetos existe:', snapshotProjetos ? 'Sim' : 'Não');
-                console.log('Snapshot de projetos válido:', snapshotProjetos.exists() ? 'Sim' : 'Não');
-                
-                const projetos = snapshotProjetos.val();
-                console.log('Dados dos projetos:', projetos);
-                
-                // Se não há projetos, exibe mensagem
-                if (!projetos || objetoVazio(projetos)) {
-                    console.log('Nenhum projeto encontrado para este cliente');
-                    document.getElementById('listasProjetos').innerHTML = `
-                        <div class="alert alert-info">
-                            Este cliente não possui projetos cadastrados.
-                        </div>
+                cardHeader.appendChild(tituloCard);
+                cardProjeto.appendChild(cardHeader);
+
+                const cardBody = document.createElement('div');
+                cardBody.className = 'card-body';
+
+                if (projeto.terceirizado) {
+                    cardBody.innerHTML = `
+                        <p><strong>Empresa:</strong> ${projeto.empresa_terceirizada || 'Não informada'}</p>
+                        <p><strong>Data de Solicitação:</strong> ${formatarData(projeto.data_solicitacao_terceirizada) || 'Não informada'}</p>
+                        <p><strong>Prazo de Entrega:</strong> ${formatarData(projeto.prazo_entrega_terceirizada) || 'Não informado'}</p>
                     `;
-                    
-                    // Oculta o indicador de carregamento e mostra o conteúdo
-                    document.getElementById('loadingVisualizacao').classList.add('d-none');
-                    document.getElementById('conteudoVisualizacao').classList.remove('d-none');
-                    
-                    // Exibe o modal
-                    console.log('Exibindo modal sem projetos');
-                    const modalVisualizacao = new bootstrap.Modal(document.getElementById('modalVisualizacao'));
-                    modalVisualizacao.show();
-                    
-                    return;
-                }
-                
-                // Cria os cards para cada tipo de projeto
-                const listasProjetos = document.getElementById('listasProjetos');
-                listasProjetos.innerHTML = ''; // Limpa qualquer conteúdo anterior
-                
-                // Registra os tipos de projetos já processados para evitar duplicidade
-                const tiposProcessados = new Set();
-                
-                console.log('Processando tipos de projetos:', Object.keys(projetos));
-                Object.keys(projetos).forEach(tipoProjeto => {
-                    // Verifica se este tipo de projeto já foi processado
-                    if (tiposProcessados.has(tipoProjeto)) {
-                        console.log(`Tipo de projeto ${tipoProjeto} já foi processado, ignorando duplicidade`);
-                        return;
+                     // Adicionar botão para ver/baixar lista de chaves se URL existir
+                    if (projeto.url_lista_chaves) {
+                        const btnDownloadChaves = document.createElement('a');
+                        btnDownloadChaves.href = projeto.url_lista_chaves;
+                        btnDownloadChaves.target = "_blank";
+                        btnDownloadChaves.className = "btn btn-sm btn-outline-secondary mt-2";
+                        btnDownloadChaves.innerHTML = '<i class="fas fa-download me-1"></i> Ver Lista de Chaves';
+                        cardBody.appendChild(btnDownloadChaves);
+                    }
+
+                } else { // Produção própria
+                    // Aqui, em vez de `projeto.listas`, vamos verificar as URLs diretamente no objeto `projeto`
+                    // Ex: projeto.url_lista_chaves, projeto.url_lista_pvc, etc.
+                    const listasDisponiveis = [];
+                    // Mapear nomes de colunas de URL para nomes de exibição de listas
+                    const mapaListas = {
+                        'url_lista_chaves': 'LChaves',
+                        'url_lista_pvc': 'LPVC',
+                        'url_lista_reforco': 'LReforco',
+                        'url_lista_ferragens': 'LFerragens',
+                        'url_lista_vidros': 'LVidros',
+                        'url_lista_esteira': 'LEsteira',
+                        'url_lista_motor': 'LMotor',
+                        'url_lista_acabamento': 'LAcabamento',
+                        'url_lista_tela_retratil': 'LTelaRetratil',
+                        'url_lista_aco': 'LAco',
+                        'url_lista_perfil': 'LPerfil',
+                        'url_lista_contramarco': 'LContraMarco',
+                        'url_lista_conexao': 'LConexao',
+                        'url_lista_chapa_acm': 'LChapaACM',
+                        'url_lista_fechadura_eletronica': 'LFechaduraEletronica',
+                        // Adicionar outras listas conforme as colunas da sua tabela 'projetos'
+                    };
+                    // Para listas personalizadas de "Outros", você pode ter um campo JSON `custom_lists`
+                    // if (tipoProjeto === 'Outros' && projeto.custom_lists) {
+                    //     projeto.custom_lists.forEach(customList => {
+                    //         if(customList.url) listasDisponiveis.push({ nomeExibicao: customList.name, url: customList.url, nomeOriginal: `L${customList.name}` });
+                    //     });
+                    // }
+
+
+                    for (const urlField in mapaListas) {
+                        if (projeto[urlField]) { // Se a URL existe no projeto
+                            listasDisponiveis.push({
+                                nomeExibicao: formatarNomeLista(mapaListas[urlField]),
+                                url: projeto[urlField],
+                                nomeOriginal: mapaListas[urlField] // Para `carregarItensLista` se necessário, ou apenas para download
+                            });
+                        }
                     }
                     
-                    // Marca este tipo como processado
-                    tiposProcessados.add(tipoProjeto);
-                    
-                    const projeto = projetos[tipoProjeto];
-                    
-                    console.log(`Processando projeto ${tipoProjeto}:`, projeto);
-                    
-                    if (!projeto) {
-                        console.warn(`Projeto ${tipoProjeto} está vazio ou inválido`);
-                        return;
-                    }
-                    
-                    // Cria o card do projeto
-                    const cardProjeto = document.createElement('div');
-                    cardProjeto.className = 'card mb-3 projeto-card';
-                    cardProjeto.dataset.tipoProjeto = tipoProjeto;
-                    
-                    // Cabeçalho do card
-                    const cardHeader = document.createElement('div');
-                    cardHeader.className = 'card-header d-flex justify-content-between align-items-center';
-                    
-                    // Título do projeto
-                    const tituloCard = document.createElement('h5');
-                    tituloCard.className = 'mb-0';
-                    tituloCard.textContent = formatarTipoProjeto(tipoProjeto);
-                    
-                    // Badge de terceirizado, se aplicável
-                    if (projeto.terceirizado) {
-                        const badgeTerceirizado = document.createElement('span');
-                        badgeTerceirizado.className = 'badge bg-info ms-2';
-                        badgeTerceirizado.textContent = 'Terceirizado';
-                        tituloCard.appendChild(badgeTerceirizado);
-                    }
-                    
-                    cardHeader.appendChild(tituloCard);
-                    cardProjeto.appendChild(cardHeader);
-                    
-                    // Corpo do card
-                    const cardBody = document.createElement('div');
-                    cardBody.className = 'card-body';
-                    
-                    // Se for terceirizado, mostra informações da empresa
-                    if (projeto.terceirizado) {
-                        cardBody.innerHTML = `
-                            <p><strong>Empresa:</strong> ${projeto.empresa || 'Não informada'}</p>
-                            <p><strong>Data de Solicitação:</strong> ${formatarData(projeto.dataSolicitacao) || 'Não informada'}</p>
-                            <p><strong>Prazo de Entrega:</strong> ${formatarData(projeto.prazoEntrega) || 'Não informado'}</p>
-                        `;
-                    } 
-                    // Se não for terceirizado, mostra as listas
-                    else if (projeto.listas && !objetoVazio(projeto.listas)) {
-                        console.log(`Processando listas do projeto ${tipoProjeto}:`, Object.keys(projeto.listas));
-                        
-                        // Cria botões para cada lista
+                    if (listasDisponiveis.length > 0) {
                         const listasContainer = document.createElement('div');
                         listasContainer.className = 'listas-container';
-                        
-                        Object.keys(projeto.listas).forEach(nomeLista => {
-                            console.log(`Criando botão para lista ${nomeLista}`);
-                            
-                            const btnLista = document.createElement('button');
-                            btnLista.className = 'btn btn-outline-primary me-2 mb-2 btn-lista';
-                            btnLista.textContent = formatarNomeLista(nomeLista);
-                            btnLista.dataset.tipoProjeto = tipoProjeto;
-                            btnLista.dataset.nomeLista = nomeLista;
-                            btnLista.addEventListener('click', function() {
-                                console.log(`Botão da lista ${nomeLista} clicado`);
-                                
-                                // Remove a classe ativa de todos os botões
-                                document.querySelectorAll('.btn-lista').forEach(btn => {
-                                    btn.classList.remove('active');
-                                });
-                                
-                                // Adiciona a classe ativa ao botão clicado
-                                this.classList.add('active');
-                                
-                                // Carrega os itens da lista
-                                carregarItensLista(clienteId, tipoProjeto, nomeLista);
-                            });
-                            
+                        listasDisponiveis.forEach(listaInfo => {
+                            const btnLista = document.createElement('a'); // Mudar para <a> para download direto
+                            btnLista.href = listaInfo.url;
+                            btnLista.target = "_blank"; // Abrir em nova aba
+                            btnLista.className = 'btn btn-outline-primary me-2 mb-2 btn-lista-download';
+                            btnLista.textContent = listaInfo.nomeExibicao;
+                            btnLista.setAttribute('title', `Baixar lista ${listaInfo.nomeExibicao}`);
+                            // Se precisar carregar itens na interface em vez de download direto:
+                            // btnLista.addEventListener('click', function(e) {
+                            // e.preventDefault(); // Prevenir navegação se for carregar na interface
+                            // document.querySelectorAll('.btn-lista-download').forEach(btn => btn.classList.remove('active'));
+                            // this.classList.add('active');
+                            // carregarItensLista(clienteId, tipoProjeto, listaInfo.nomeOriginal, listaInfo.url); // Passar URL se os itens não estiverem no BD
+                            // });
                             listasContainer.appendChild(btnLista);
                         });
-                        
                         cardBody.appendChild(listasContainer);
                     } else {
-                        console.log(`Projeto ${tipoProjeto} não tem listas`);
-                        cardBody.innerHTML = `
-                            <div class="alert alert-light">
-                                Nenhuma lista cadastrada para este projeto.
-                            </div>
-                        `;
+                        cardBody.innerHTML = `<div class="alert alert-light">Nenhuma lista de materiais disponível para este projeto.</div>`;
                     }
-                    
-                    cardProjeto.appendChild(cardBody);
-                    listasProjetos.appendChild(cardProjeto);
-                });
-                
-                // Oculta o indicador de carregamento e mostra o conteúdo
-                document.getElementById('loadingVisualizacao').classList.add('d-none');
-                document.getElementById('conteudoVisualizacao').classList.remove('d-none');
-                
-                // Exibe o modal com animação
-                console.log('Exibindo modal com projetos');
-                const modalVisualizacao = new bootstrap.Modal(document.getElementById('modalVisualizacao'));
-                modalVisualizacao.show();
-                
-                // Adiciona animação de entrada aos cards
-                setTimeout(() => {
-                    document.querySelectorAll('.projeto-card').forEach((card, index) => {
-                        setTimeout(() => {
-                            card.classList.add('animate__animated', 'animate__fadeInUp');
-                        }, index * 100);
-                    });
-                }, 300);
-                
-                console.log('=== FIM DA FUNÇÃO VISUALIZAR CLIENTE - SUCESSO ===');
-            })
-            .catch(error => {
-                console.error('Erro ao carregar dados do cliente:', error);
-                console.error('Mensagem de erro:', error.message);
-                console.error('Stack trace:', error.stack);
-                
-                mostrarNotificacao('Erro ao carregar dados do cliente. Tente novamente.', 'danger');
-                
-                // Exibe mensagem de erro no modal
-                document.getElementById('listasProjetos').innerHTML = `
-                    <div class="alert alert-danger">
-                        <i class="fas fa-exclamation-triangle me-2"></i>
-                        Erro ao carregar dados do cliente: ${error.message}
-                    </div>
-                    <div class="text-center mt-3">
-                        <button class="btn btn-outline-danger" onclick="visualizarCliente('${clienteId}')">
-                            <i class="fas fa-sync-alt me-2"></i> Tentar novamente
-                        </button>
-                    </div>
-                `;
-                
-                // Oculta o indicador de carregamento e mostra o conteúdo
-                document.getElementById('loadingVisualizacao').classList.add('d-none');
-                document.getElementById('conteudoVisualizacao').classList.remove('d-none');
-                
-                // Exibe o modal mesmo com erro
-                console.log('Exibindo modal com erro');
-                const modalVisualizacao = new bootstrap.Modal(document.getElementById('modalVisualizacao'));
-                modalVisualizacao.show();
-                
-                console.log('=== FIM DA FUNÇÃO VISUALIZAR CLIENTE - ERRO ===');
+                }
+                cardProjeto.appendChild(cardBody);
+                if (listasProjetosDiv) listasProjetosDiv.appendChild(cardProjeto);
             });
-    } catch (error) {
-        console.error('Erro crítico ao executar visualizarCliente:', error);
-        console.error('Mensagem de erro:', error.message);
-        console.error('Stack trace:', error.stack);
-        
-        mostrarNotificacao('Erro crítico ao carregar dados. Recarregue a página.', 'danger');
-        
-        // Exibe mensagem de erro no modal
-        document.getElementById('listasProjetos').innerHTML = `
-            <div class="alert alert-danger">
-                <i class="fas fa-exclamation-triangle me-2"></i>
-                Erro crítico: ${error.message}
-            </div>
-            <div class="text-center mt-3">
-                <button class="btn btn-outline-danger" onclick="location.reload()">
-                    <i class="fas fa-sync-alt me-2"></i> Recarregar página
-                </button>
-            </div>
-        `;
-        
-        // Oculta o indicador de carregamento e mostra o conteúdo
-        document.getElementById('loadingVisualizacao').classList.add('d-none');
-        document.getElementById('conteudoVisualizacao').classList.remove('d-none');
-        
-        // Exibe o modal mesmo com erro
-        console.log('Exibindo modal com erro crítico');
-        const modalVisualizacao = new bootstrap.Modal(document.getElementById('modalVisualizacao'));
-        modalVisualizacao.show();
-        
-        console.log('=== FIM DA FUNÇÃO VISUALIZAR CLIENTE - ERRO CRÍTICO ===');
-    }
-}
+        }
 
-/**
- * Carrega os itens de uma lista específica
- * 
- * @param {string} clienteId - ID do cliente
- * @param {string} tipoProjeto - Tipo de projeto
- * @param {string} nomeLista - Nome da lista
- */
-function carregarItensLista(clienteId, tipoProjeto, nomeLista) {
-    console.log('=== INÍCIO DA FUNÇÃO CARREGAR ITENS LISTA ===');
-    console.log(`Carregando itens: cliente=${clienteId}, tipo=${tipoProjeto}, lista=${nomeLista}`);
-    
-    // Mostra o indicador de carregamento
-    document.getElementById('loadingDetalhes').classList.remove('d-none');
-    document.getElementById('detalhesLista').innerHTML = '';
-    
-    // Atualiza o título da seção
-    document.getElementById('tituloDetalhes').textContent = `${formatarTipoProjeto(tipoProjeto)} - ${formatarNomeLista(nomeLista)}`;
-    document.getElementById('secaoDetalhes').classList.remove('d-none');
-    
-    console.log(`Caminho da consulta: projetos/${clienteId}/${tipoProjeto}/listas/${nomeLista}`);
-    
-    // Busca os itens da lista no Firebase
-    dbRef.projetos.child(`${clienteId}/${tipoProjeto}/listas/${nomeLista}`).once('value')
-        .then(snapshot => {
-            console.log('Resposta recebida do Firebase para itens da lista');
-            console.log('Snapshot existe:', snapshot ? 'Sim' : 'Não');
-            console.log('Snapshot válido:', snapshot.exists() ? 'Sim' : 'Não');
-            
-            const itens = snapshot.val();
-            console.log('Dados dos itens:', itens);
-            
-            // Oculta o indicador de carregamento
-            document.getElementById('loadingDetalhes').classList.add('d-none');
-            
-            // Se não há itens, exibe mensagem
-            if (!itens || objetoVazio(itens)) {
-                console.log('Nenhum item encontrado nesta lista');
-                document.getElementById('detalhesLista').innerHTML = `
-                    <div class="alert alert-light">
-                        Nenhum item cadastrado nesta lista.
-                    </div>
-                `;
-                return;
-            }
-            
-            // Cria a tabela de itens
-            const tabela = document.createElement('table');
-            tabela.className = 'table table-striped table-hover';
-            
-            // Cabeçalho da tabela
-            const thead = document.createElement('thead');
-            thead.innerHTML = `
-                <tr>
-                    <th>Código</th>
-                    <th>Descrição</th>
-                    <th>Quantidade</th>
-                    <th>Status</th>
-                </tr>
-            `;
-            tabela.appendChild(thead);
-            
-            // Corpo da tabela
-            const tbody = document.createElement('tbody');
-                    // Adiciona cada item à tabela
-            Object.keys(itens).forEach(itemId => {
-                const item = itens[itemId];
-                
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${item.codigo || '-'}</td>
-                    <td>${item.descricao || item.nome || 'Item sem nome'}</td>
-                    <td>${item.quantidade || '-'}</td>
-                    <td>
-                        <span class="badge ${getBadgeClass(item.status)}">${item.status || 'Pendente'}</span>
-                    </td>
-                `;
-                
-                tbody.appendChild(tr);
-            });;
-            
-            tabela.appendChild(tbody);
-            document.getElementById('detalhesLista').appendChild(tabela);
-            
-            console.log('=== FIM DA FUNÇÃO CARREGAR ITENS LISTA - SUCESSO ===');
-        })
-        .catch(error => {
-            console.error('Erro ao carregar itens da lista:', error);
-            console.error('Mensagem de erro:', error.message);
-            console.error('Stack trace:', error.stack);
-            
-            // Oculta o indicador de carregamento
-            document.getElementById('loadingDetalhes').classList.add('d-none');
-            
-            // Exibe mensagem de erro
-            document.getElementById('detalhesLista').innerHTML = `
+        if (loadingVisualizacao) loadingVisualizacao.classList.add('d-none');
+        if (conteudoVisualizacao) conteudoVisualizacao.classList.remove('d-none');
+
+        const modal = bootstrap.Modal.getInstance(modalVisualizacaoElement) || new bootstrap.Modal(modalVisualizacaoElement);
+        modal.show();
+        
+        // Adiciona animação de entrada aos cards
+        setTimeout(() => {
+            document.querySelectorAll('.projeto-card').forEach((card, index) => {
+                setTimeout(() => {
+                    card.classList.add('animate__animated', 'animate__fadeInUp');
+                }, index * 100);
+            });
+        }, 300);
+
+        console.log('=== FIM DA FUNÇÃO VISUALIZAR CLIENTE (SUPABASE) - SUCESSO ===');
+
+    } catch (error) {
+        console.error('Erro ao carregar dados do cliente (Supabase):', error);
+        mostrarNotificacao(`Erro ao carregar dados: ${error.message}`, 'danger');
+        if (listasProjetosDiv) {
+            listasProjetosDiv.innerHTML = `
                 <div class="alert alert-danger">
                     <i class="fas fa-exclamation-triangle me-2"></i>
-                    Erro ao carregar itens da lista: ${error.message}
+                    Erro ao carregar dados do cliente: ${error.message}
                 </div>
                 <div class="text-center mt-3">
-                    <button class="btn btn-outline-danger" onclick="carregarItensLista('${clienteId}', '${tipoProjeto}', '${nomeLista}')">
+                    <button class="btn btn-outline-danger" onclick="visualizarCliente('${clienteId}')">
                         <i class="fas fa-sync-alt me-2"></i> Tentar novamente
                     </button>
                 </div>
             `;
-            
-            console.log('=== FIM DA FUNÇÃO CARREGAR ITENS LISTA - ERRO ===');
-        });
+        }
+        if (loadingVisualizacao) loadingVisualizacao.classList.add('d-none');
+        if (conteudoVisualizacao) conteudoVisualizacao.classList.remove('d-none');
+
+        const modal = bootstrap.Modal.getInstance(modalVisualizacaoElement) || new bootstrap.Modal(modalVisualizacaoElement);
+        modal.show(); // Mostra o modal mesmo com erro para o usuário ver a mensagem
+        console.log('=== FIM DA FUNÇÃO VISUALIZAR CLIENTE (SUPABASE) - ERRO ===');
+    }
 }
 
+
 /**
+ * Carrega os itens de uma lista específica
+ *
+ * @param {string} clienteId - ID do cliente
  * Formata o tipo de projeto para exibição
  * 
  * @param {string} tipo - Tipo de projeto
