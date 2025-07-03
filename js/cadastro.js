@@ -200,11 +200,11 @@ function configurarEventListeners() {
  * e atualiza a tabela na interface
  */
 async function carregarClientes() {
-  // Verifica se supabase está disponível
-  if (typeof window.supabase === 'undefined' || !window.supabase) {
-    console.error('Supabase não está disponível ainda. Aguardando...');
+  // Verifica se supabaseClient está disponível
+  if (typeof window.supabaseClient === 'undefined' || !window.supabaseClient) {
+    console.error('Supabase client (window.supabaseClient) não está disponível ainda. Aguardando...');
     // Opcional: tentar novamente após um tempo ou mostrar notificação persistente
-    // setTimeout(carregarClientes, 500);
+    // setTimeout(carregarClientes, 250);
     return;
   }
 
@@ -217,7 +217,7 @@ async function carregarClientes() {
   filtroClienteSelect.innerHTML = '<option value="">Todos os clientes</option>'; // Mantém a opção padrão
 
   try {
-    const { data: clientes, error } = await window.supabase
+    const { data: clientes, error } = await window.supabaseClient
       .from('clientes')
       .select('*')
       .order('dataCriacao', { ascending: false });
@@ -333,8 +333,8 @@ async function editarCliente(clienteId) {
   console.log("=== INÍCIO DA FUNÇÃO EDITAR CLIENTE (SUPABASE) ===");
   console.log("Editando cliente com ID:", clienteId, "Global editandoClienteId:", window.editandoClienteId);
 
-  if (!window.supabase) {
-    console.error("ERRO CRÍTICO: Supabase client (window.supabase) não está definido!");
+  if (!window.supabaseClient) {
+    console.error("ERRO CRÍTICO: Supabase client (window.supabaseClient) não está definido!");
     mostrarNotificacao("Erro de conexão com o banco de dados. Recarregue a página.", "danger");
     return;
   }
@@ -356,7 +356,7 @@ async function editarCliente(clienteId) {
 
   try {
     // 1. Buscar dados do cliente
-    const { data: cliente, error: clienteError } = await window.supabase
+    const { data: cliente, error: clienteError } = await window.supabaseClient
       .from('clientes')
       .select('*')
       .eq('id', clienteId)
@@ -389,7 +389,7 @@ async function editarCliente(clienteId) {
 
 
     // 2. Buscar os projetos associados a esse cliente
-    const { data: projetos, error: projetosError } = await window.supabase
+    const { data: projetos, error: projetosError } = await window.supabaseClient
       .from('projetos') // Nome da sua tabela de projetos
       .select('*')
       .eq('cliente_id', clienteId);
@@ -485,35 +485,30 @@ async function editarCliente(clienteId) {
  */
 async function salvarCadastro() {
     const nomeCliente = document.getElementById('cliente').value.trim();
-    const dataPrazo = document.getElementById('dataPrazoEntrega').value;
+    const dataPrazoInput = document.getElementById('dataPrazoEntrega').value;
 
     if (!nomeCliente) {
         mostrarNotificacao("O nome do cliente é obrigatório.", "danger");
         return;
     }
 
-    // Formatar data_prazo_entrega para ISO string ou null
     let dataPrazoFormatada = null;
-    if (dataPrazo) {
-        const parts = dataPrazo.split('/');
+    if (dataPrazoInput) {
+        const parts = dataPrazoInput.split('/');
         if (parts.length === 3) {
-            // Ano, Mês (0-indexado), Dia
             dataPrazoFormatada = new Date(Date.UTC(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]))).toISOString();
         } else {
-            console.warn("Formato de data inválido para prazo de entrega:", dataPrazo);
-            // Considerar mostrar notificação ao usuário ou tratar como erro
+            console.warn("Formato de data inválido para prazo de entrega:", dataPrazoInput);
         }
     }
 
-    // Objeto principal de dados do cliente
     const clienteData = {
         nome: nomeCliente,
-        data_prazo_entrega: dataPrazoFormatada, // Usar a data formatada
+        data_prazo_entrega: dataPrazoFormatada,
         ultimaAtualizacao: new Date().toISOString(),
     };
 
-    // Adicionar nome do projeto "Outros" se selecionado e preenchido
-    if (document.getElementById('tipoOutros') && document.getElementById('tipoOutros').checked) {
+    if (document.getElementById('tipoOutros')?.checked) {
         const nomeProjetoOutrosInput = document.getElementById('nomeProjetoOutros');
         if (nomeProjetoOutrosInput && nomeProjetoOutrosInput.value.trim()) {
             clienteData.projetoOutrosNome = nomeProjetoOutrosInput.value.trim();
@@ -522,11 +517,9 @@ async function salvarCadastro() {
 
     try {
         let savedCliente;
-
-        // ETAPA 1: Salvar (Insert ou Update) o Cliente para obter o ID
         if (window.editandoClienteId) {
-            clienteData.id = window.editandoClienteId; // Adicionar ID para garantir que o update não o remova do objeto
-            const { data, error } = await supabase
+            clienteData.id = window.editandoClienteId;
+            const { data, error } = await window.supabaseClient
                 .from('clientes')
                 .update(clienteData)
                 .eq('id', window.editandoClienteId)
@@ -536,10 +529,9 @@ async function salvarCadastro() {
             savedCliente = data;
             mostrarNotificacao("Cliente atualizado com sucesso!", "success");
         } else {
-            // Adicionar campos específicos de criação
             clienteData.dataCriacao = new Date().toISOString();
-            clienteData.StatusCadastro = "Não iniciado"; // Default status for new clients
-            const { data, error } = await supabase
+            clienteData.StatusCadastro = "Não iniciado";
+            const { data, error } = await window.supabaseClient
                 .from('clientes')
                 .insert(clienteData)
                 .select()
@@ -550,147 +542,153 @@ async function salvarCadastro() {
         }
 
         const clienteId = savedCliente.id;
-
-        // ETAPA 2: Processar e Salvar os Projetos e Arquivos
         const tiposDeProjetoSelecionados = getTiposDeProjetoSelecionados();
 
         for (const tipo of tiposDeProjetoSelecionados) {
             const isTerceirizado = document.getElementById(`${tipo.toLowerCase()}Terceirizado`)?.checked || false;
 
-            const projetoData = {
+            const projetoPayload = {
                 cliente_id: clienteId,
                 tipo_projeto: tipo,
                 terceirizado: isTerceirizado,
             };
 
-            let areaDeInputsId;
-            let storageSubPath;
-
             if (isTerceirizado) {
-                areaDeInputsId = `area${tipo}Terceirizado`;
-                storageSubPath = 'terceirizado';
-
                 const empresa = document.getElementById(`empresa${tipo}`)?.value.trim();
-                if (empresa) projetoData.empresa_terceirizada = empresa;
-
+                if (empresa) projetoPayload.empresa_terceirizada = empresa;
                 const dataSolicitacaoInput = document.getElementById(`dataSolicitacao${tipo}`)?.value;
                 if (dataSolicitacaoInput) {
                     const parts = dataSolicitacaoInput.split('/');
-                    if (parts.length === 3) {
-                        projetoData.data_solicitacao_terceirizada = new Date(Date.UTC(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]))).toISOString();
-                    }
+                    if (parts.length === 3) projetoPayload.data_solicitacao_terceirizada = new Date(Date.UTC(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]))).toISOString();
                 }
-
                 const prazoEntregaTerceirizadoInput = document.getElementById(`prazoEntrega${tipo}`)?.value;
                 if (prazoEntregaTerceirizadoInput) {
                     const parts = prazoEntregaTerceirizadoInput.split('/');
-                    if (parts.length === 3) {
-                        projetoData.prazo_entrega_terceirizada = new Date(Date.UTC(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]))).toISOString();
-                    }
+                    if (parts.length === 3) projetoPayload.prazo_entrega_terceirizada = new Date(Date.UTC(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]))).toISOString();
                 }
-            } else {
-                areaDeInputsId = `area${tipo}Producao`;
-                storageSubPath = 'producao';
-                // Para o tipo "Outros" em produção própria, coletar listas personalizadas
-                if (tipo === "Outros") {
-                    const listasPersonalizadasContainer = document.getElementById("listasPersonalizadasContainer");
-                    const customListsData = [];
-                    if (listasPersonalizadasContainer) {
-                        const listasItems = listasPersonalizadasContainer.querySelectorAll(".lista-personalizada");
-                        for (const item of listasItems) { // Usar for...of para permitir await dentro do loop
-                            const nomeListaInput = item.querySelector(".nome-lista-personalizada");
-                            const arquivoListaInput = item.querySelector(".arquivo-lista-personalizada");
-                            if (nomeListaInput && nomeListaInput.value.trim() && arquivoListaInput && arquivoListaInput.files.length > 0) {
-                                const arquivo = arquivoListaInput.files[0];
-                                const nomeListaSanitizado = nomeListaInput.value.trim().replace(/\s+/g, '_');
-                                const caminhoArquivo = `public/${clienteId}/${tipo}/${storageSubPath}/L${nomeListaSanitizado}-${arquivo.name}`;
-
-                                const { error: uploadError } = await supabase.storage
-                                    .from('listas-materiais')
-                                    .upload(caminhoArquivo, arquivo, { cacheControl: '3600', upsert: true });
-                                if (uploadError) throw new Error(`Falha no upload do arquivo personalizado ${arquivo.name}: ${uploadError.message}`);
-
-                                const { data: urlData } = supabase.storage.from('listas-materiais').getPublicUrl(caminhoArquivo);
-                                if (urlData && urlData.publicUrl) {
-                                    customListsData.push({ nome: nomeListaSanitizado, url: urlData.publicUrl });
-                                }
-                            }
-                        }
-                    }
-                    if (customListsData.length > 0) {
-                         // Armazenar como JSON ou em colunas separadas, dependendo do BD.
-                         // Exemplo: armazenando como JSONB na coluna 'custom_lists_json'
-                        projetoData.custom_lists_json = customListsData;
-                    }
-                }
+            } else if (tipo === "Outros") {
+                 const listasPersonalizadasContainer = document.getElementById("listasPersonalizadasContainer");
+                 const customListsData = [];
+                 if (listasPersonalizadasContainer) {
+                     const listasItems = listasPersonalizadasContainer.querySelectorAll(".lista-personalizada");
+                     for (const item of listasItems) {
+                         const nomeListaInput = item.querySelector(".nome-lista-personalizada");
+                         const arquivoListaInput = item.querySelector(".arquivo-lista-personalizada");
+                         if (nomeListaInput?.value.trim() && arquivoListaInput?.files.length > 0) {
+                             // Apenas coletamos o nome aqui. O upload e processamento do arquivo será feito depois.
+                             customListsData.push({ nome: nomeListaInput.value.trim(), inputElement: arquivoListaInput });
+                         }
+                     }
+                 }
+                 if (customListsData.length > 0) {
+                    // Guardamos a referencia para os inputs para processar depois do upsert do projeto
+                    projetoPayload._customListsToProcess = customListsData;
+                 }
             }
 
-            const areaDeInputs = document.getElementById(areaDeInputsId);
-            if (!areaDeInputs) {
-                console.warn(`Área de inputs '${areaDeInputsId}' não encontrada para o tipo ${tipo}. Pulando processamento de arquivos para esta seção.`);
-            } else {
-                const inputsDeArquivo = areaDeInputs.querySelectorAll('input[type="file"]');
-                for (const input of inputsDeArquivo) {
-                    // Pular inputs de listas personalizadas "Outros" pois já foram tratados
-                    if (tipo === "Outros" && !isTerceirizado && input.classList.contains('arquivo-lista-personalizada')) {
-                        continue;
-                    }
+            // Upsert inicial do projeto para obter/confirmar o ID do projeto
+            const { data: savedProjeto, error: upsertProjetoError } = await window.supabaseClient
+                .from('projetos')
+                .upsert(projetoPayload, { onConflict: 'cliente_id, tipo_projeto' })
+                .select()
+                .single();
 
+            if (upsertProjetoError) {
+                throw new Error(`Erro ao salvar/atualizar o projeto ${tipo}: ${upsertProjetoError.message}`);
+            }
+            const projetoId = savedProjeto.id;
+
+            // Processar arquivos para este projeto
+            const areaDeInputsId = isTerceirizado ? `area${tipo}Terceirizado` : `area${tipo}Producao`;
+            const storageSubPath = isTerceirizado ? 'terceirizado' : 'producao';
+            const areaDeInputs = document.getElementById(areaDeInputsId);
+
+            if (areaDeInputs) {
+                const inputsDeArquivo = areaDeInputs.querySelectorAll('input[type="file"]');
+                const fileProcessingPromises = [];
+
+                for (const input of inputsDeArquivo) {
+                    if (tipo === "Outros" && !isTerceirizado && input.classList.contains('arquivo-lista-personalizada')) {
+                        continue; // Já tratado ou será tratado por _customListsToProcess
+                    }
                     if (input.files.length > 0) {
                         const arquivo = input.files[0];
-                        // Normaliza o ID do input para nome da coluna. Ex: listaChavesPVC -> url_chavespvc ou listaChaves -> url_chaves
-                        // O ID do input deve ser único e descritivo da lista que ele representa.
-                        // Ex: "listaChaves", "listaPerfil", "listaPVC" (sem o tipo de projeto no ID se possível, pois 'tipo' já é uma variável)
-                        // Se o ID for como "listaChavesPVC", precisamos remover "PVC" para generalizar.
-                        let baseNomeColuna = input.id.replace('lista', '').replace(tipo, '').toLowerCase(); // Remove "lista" e o tipo do projeto.
-                        baseNomeColuna = baseNomeColuna.replace(/terceirizado$/i, ''); // Remove "terceirizado" se presente no final
-                        baseNomeColuna = baseNomeColuna.replace(/producao$/i, ''); // Remove "producao" se presente no final
-
-                        const nomeDaColuna = `url_${baseNomeColuna}`;
-
+                        let baseNomeColuna = input.id.replace('lista', '').replace(tipo, '').toLowerCase();
+                        baseNomeColuna = baseNomeColuna.replace(/terceirizado$/i, '').replace(/producao$/i, '');
+                        const nomeDaColunaUrl = `url_${baseNomeColuna}`;
                         const caminhoArquivo = `public/${clienteId}/${tipo}/${storageSubPath}/${input.id}-${arquivo.name}`;
 
-                        const { error: uploadError } = await supabase.storage
-                            .from('listas-materiais')
-                            .upload(caminhoArquivo, arquivo, { cacheControl: '3600', upsert: true });
-                        if (uploadError) throw new Error(`Falha no upload do arquivo ${arquivo.name}: ${uploadError.message}`);
+                        fileProcessingPromises.push(
+                            window.supabaseClient.storage.from('listas-materiais').upload(caminhoArquivo, arquivo, { cacheControl: '3600', upsert: true })
+                                .then(async ({ data: uploadData, error: uploadError }) => {
+                                    if (uploadError) throw new Error(`Upload falhou para ${arquivo.name}: ${uploadError.message}`);
+                                    const { data: urlData } = window.supabaseClient.storage.from('listas-materiais').getPublicUrl(uploadData.path);
 
-                        const { data: urlData } = supabase.storage.from('listas-materiais').getPublicUrl(caminhoArquivo);
-                        if (urlData && urlData.publicUrl) {
-                            projetoData[nomeDaColuna] = urlData.publicUrl;
-                        } else {
-                            console.warn(`Não foi possível obter URL pública para ${caminhoArquivo}`);
-                        }
+                                    await window.supabaseClient.from('projetos').update({ [nomeDaColunaUrl]: urlData.publicUrl }).eq('id', projetoId);
+
+                                    // Chamar processamento de itens
+                                    if (typeof processarEsalvarItensDeArquivo === "function") {
+                                        return processarEsalvarItensDeArquivo(arquivo, projetoId)
+                                            .then(() => mostrarNotificacao(`Itens de ${arquivo.name} processados.`,"info"))
+                                            .catch(procErr => {
+                                                console.error(`Erro processando itens de ${arquivo.name}:`, procErr);
+                                                mostrarNotificacao(`Erro ao processar itens de ${arquivo.name}.`, "warning");
+                                            });
+                                    }
+                                })
+                        );
                     }
                 }
-            }
+                 // Processar listas personalizadas para "Outros" (produção)
+                if (tipo === "Outros" && !isTerceirizado && savedProjeto._customListsToProcess) {
+                    for (const customItem of savedProjeto._customListsToProcess) {
+                        const arquivo = customItem.inputElement.files[0];
+                        const nomeListaSanitizado = customItem.nome.replace(/\s+/g, '_');
+                        const caminhoArquivo = `public/${clienteId}/${tipo}/${storageSubPath}/L${nomeListaSanitizado}-${arquivo.name}`;
+                        const nomeDaColunaUrl = `url_custom_${nomeListaSanitizado}`; // Ou como for armazenar no BD
 
-            // ETAPA 3: Salvar os dados do Projeto (com as URLs e dados de terceirização) na tabela 'projetos'
-            // Verifica se há dados além de cliente_id, tipo_projeto e terceirizado (que são sempre definidos)
-            const chavesProjeto = Object.keys(projetoData);
-            const temDadosAdicionais = chavesProjeto.some(chave => !['cliente_id', 'tipo_projeto', 'terceirizado'].includes(chave) && projetoData[chave] !== null && projetoData[chave] !== undefined);
+                        fileProcessingPromises.push(
+                             window.supabaseClient.storage.from('listas-materiais').upload(caminhoArquivo, arquivo, { cacheControl: '3600', upsert: true })
+                                .then(async ({ data: uploadData, error: uploadError }) => {
+                                    if (uploadError) throw new Error(`Upload falhou para ${arquivo.name}: ${uploadError.message}`);
+                                    const { data: urlData } = window.supabaseClient.storage.from('listas-materiais').getPublicUrl(uploadData.path);
 
-            if (temDadosAdicionais || (isTerceirizado && projetoData.empresa_terceirizada)) { // Salva se tiver URLs ou se for terceirizado com empresa
-                 const { error: upsertError } = await supabase.from('projetos').upsert(projetoData, {
-                    onConflict: 'cliente_id, tipo_projeto'
-                 });
-                 if (upsertError) {
-                    throw new Error(`Erro ao salvar dados do projeto ${tipo}: ${upsertError.message}`);
-                 }
-            } else {
-                console.log(`Nenhum dado de arquivo para salvar para o projeto tipo: ${tipo}. O projeto não será salvo/atualizado a menos que outros campos sejam adicionados.`);
-                // Poderia-se optar por salvar o projeto mesmo sem URLs de arquivo se houver outros dados (ex: terceirizado info)
-                // Esta lógica será revisada quando adicionarmos os campos de terceirizado.
+                                    // Supondo que você tenha colunas dinâmicas ou um campo JSON para estas URLs em 'projetos'
+                                    // Aqui estamos apenas atualizando um campo JSON 'custom_lists_json' como exemplo
+                                    const updatePayload = {};
+                                    updatePayload.custom_lists_json = savedProjeto.custom_lists_json || [];
+                                    updatePayload.custom_lists_json.push({ nome: nomeListaSanitizado, url: urlData.publicUrl });
+
+                                    await window.supabaseClient.from('projetos').update(updatePayload).eq('id', projetoId);
+
+                                    if (typeof processarEsalvarItensDeArquivo === "function") {
+                                       return processarEsalvarItensDeArquivo(arquivo, projetoId)
+                                            .then(() => mostrarNotificacao(`Itens de ${arquivo.name} (custom) processados.`, "info"))
+                                            .catch(procErr => {
+                                                console.error(`Erro processando itens de ${arquivo.name} (custom):`, procErr);
+                                                mostrarNotificacao(`Erro ao processar itens de ${arquivo.name} (custom).`, "warning");
+                                            });
+                                    }
+                                })
+                        );
+                    }
+                }
+
+
+                await Promise.all(fileProcessingPromises).catch(err => {
+                    // Um erro em Promise.all geralmente significa que um dos uploads/processamentos falhou.
+                    // A notificação específica do erro já deve ter sido mostrada dentro do loop.
+                    // Aqui, podemos apenas logar que nem tudo foi concluído.
+                    console.error("Alguns arquivos ou processamentos de itens falharam:", err);
+                    // Não relançar o erro para permitir que o fluxo continue, se desejado.
+                    // Ou pode-se optar por lançar para parar tudo: throw err;
+                });
             }
         }
 
-        // ETAPA 4: Limpar tudo e recarregar a lista de clientes
-        fecharModalEresetarFormulario(); // Esta função será atualizada/confirmada na próxima etapa
-        if (typeof carregarClientes === "function") {
-            await carregarClientes();
-        } else {
-            console.warn("Função carregarClientes não definida, não foi possível recarregar a lista.");
-        }
+        fecharModalEresetarFormulario();
+        if (typeof carregarClientes === "function") await carregarClientes();
+        else console.warn("Função carregarClientes não definida.");
 
     } catch (error) {
         console.error("Erro no processo de salvar cadastro:", error);

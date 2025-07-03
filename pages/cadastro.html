@@ -876,15 +876,15 @@
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/pt.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     
-    <!-- Supabase -->
-    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <!-- Supabase CDN - DEVE SER O PRIMEIRO script relacionado ao Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     
     <!-- Scripts do sistema -->
-    <script src="../js/firebase-config.js"></script>
+    <script src="../js/firebase-config.js"></script> <!-- Inicializa o cliente Supabase -->
     <script src="../js/global.js"></script>
-    <script src="../js/processamento-arquivos.js"></script>
-    <script src="../js/visualizacao.js"></script>
-    <script src="../js/cadastro.js"></script>
+    <script src="../js/processamento-arquivos.js"></script> <!-- Verificar se ainda é necessário ou se sua lógica foi movida/substituída -->
+    <script src="../js/cadastro.js"></script> <!-- Depende de firebase-config.js -->
+    <script src="../js/visualizacao.js"></script> <!-- Depende de firebase-config.js e possivelmente de cadastro.js para helpers -->
     
     <!-- Script de depuração -->
     <script>

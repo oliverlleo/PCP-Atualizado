@@ -15,8 +15,8 @@ async function visualizarCliente(clienteId) {
     console.log('=== INÍCIO DA FUNÇÃO VISUALIZAR CLIENTE (SUPABASE) ===');
     console.log('Iniciando visualização do cliente com ID:', clienteId);
 
-    if (!window.supabase) {
-        console.error('ERRO CRÍTICO: Supabase client (window.supabase) não está definido!');
+    if (!window.supabaseClient) {
+        console.error('ERRO CRÍTICO: Supabase client (window.supabaseClient) não está definido!');
         mostrarNotificacao('Erro de conexão com o banco de dados. Recarregue a página.', 'danger');
         return;
     }
@@ -35,7 +35,7 @@ async function visualizarCliente(clienteId) {
 
     try {
         // 1. Buscar dados do cliente
-        const { data: cliente, error: clienteError } = await window.supabase
+        const { data: cliente, error: clienteError } = await window.supabaseClient
             .from('clientes')
             .select('*')
             .eq('id', clienteId)
@@ -62,7 +62,7 @@ async function visualizarCliente(clienteId) {
         document.getElementById('visualizacaoPrazoEntrega').textContent = formatarData(cliente.data_prazo_entrega);
 
         // 2. Buscar os projetos associados a esse cliente
-        const { data: projetos, error: projetosError } = await window.supabase
+        const { data: projetos, error: projetosError } = await window.supabaseClient
             .from('projetos') // Nome da sua tabela de projetos no Supabase
             .select('*')
             .eq('cliente_id', clienteId);
