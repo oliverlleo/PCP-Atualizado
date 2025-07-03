@@ -53,11 +53,13 @@ async function visualizarCliente(clienteId) {
 
         // Preenche os dados do cliente no modal
         document.getElementById('visualizacaoTitulo').textContent = cliente.nome || 'Cliente sem nome';
-        document.getElementById('visualizacaoStatus').textContent = cliente.StatusCadastro || 'Não iniciado'; // Corrigido para StatusCadastro
-        document.getElementById('visualizacaoStatus').className = `badge ${getBadgeClass(cliente.StatusCadastro)}`; // Corrigido
+        document.getElementById('visualizacaoStatus').textContent = cliente.StatusCadastro || 'Não iniciado';
+        document.getElementById('visualizacaoStatus').className = `badge ${getBadgeClass(cliente.StatusCadastro)}`;
 
+        // Assuming database column for dataCriacao is dataCriacao (as used in salvarCadastro)
         document.getElementById('visualizacaoDataCriacao').textContent = formatarData(cliente.dataCriacao);
-        document.getElementById('visualizacaoPrazoEntrega').textContent = formatarData(cliente.prazoEntrega);
+        // Assuming database column for prazoEntrega is data_prazo_entrega (as used in salvarCadastro)
+        document.getElementById('visualizacaoPrazoEntrega').textContent = formatarData(cliente.data_prazo_entrega);
 
         // 2. Buscar os projetos associados a esse cliente
         const { data: projetos, error: projetosError } = await window.supabase
